@@ -3,13 +3,9 @@
 namespace App\Http\Controllers\Asesor;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Log;
 use App\Models\Client;
-use App\Models\Loan;
-use App\Models\Savings;
 
 class AsesorDashboardController extends Controller
 {
@@ -23,13 +19,28 @@ class AsesorDashboardController extends Controller
             Log::info('AsesorDashboardController: User ID: ' . $user->id);
             Log::info('AsesorDashboardController: User role: ' . $user->role);
             
+            // Obtener IDs de clientes que tienen préstamos o ahorros con el asesor
+            $clientsWithLoans = Client::whereHas('loans', function($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })->pluck('id');
+
+            $clientsWithSavings = Client::whereHas('savings', function($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })->pluck('id');
+
+            // Combinar IDs y eliminar duplicados
+            $clientIds = $clientsWithLoans->merge($clientsWithSavings)->unique();
+
             // Obtener clientes asignados al asesor con relaciones
             $clients = Client::with([
-                'loans' => function($query) {
-                    $query->where('status_id', 1); // Solo préstamos activos
+                'loans' => function($query) use ($user) {
+                    $query->where('advisor_id', $user->id)
+                          ->where('status_id', 1); // Solo préstamos activos
                 },
-                'savings'
-            ])->where('advisor_id', $user->id)->get();
+                'savings' => function($query) use ($user) {
+                    $query->where('advisor_id', $user->id);
+                }
+            ])->whereIn('id', $clientIds)->get();
 
             // Estadísticas básicas
             $totalClients = $clients->count();
@@ -43,7 +54,7 @@ class AsesorDashboardController extends Controller
             // Obtener pagos de préstamos del día
             $loanPayments = \App\Models\Installment::whereDate('payment_date', $today)
                 ->where('status', 'pending_review')
-                ->whereHas('loan.client', function($query) use ($user) {
+                ->whereHas('loan', function($query) use ($user) {
                     $query->where('advisor_id', $user->id);
                 })
                 ->get();
@@ -51,7 +62,7 @@ class AsesorDashboardController extends Controller
             // Obtener pagos de ahorros del día
             $savingsPayments = \App\Models\SavingsInstallment::whereDate('payment_date', $today)
                 ->where('status', 'pending_review')
-                ->whereHas('savings.client', function($query) use ($user) {
+                ->whereHas('savings', function($query) use ($user) {
                     $query->where('advisor_id', $user->id);
                 })
                 ->get();

@@ -3,43 +3,9 @@
 @section('title', 'Panel de Control - Asesor')
 
 @section('content')
-<div class="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-    <!-- Header -->
-    <div class="bg-white shadow-sm border-b">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center py-6">
-                <div class="flex items-center space-x-4">
-                    <div class="p-2 bg-blue-600 rounded-lg">
-                        <i data-lucide="home" class="w-6 h-6 text-white"></i>
-                    </div>
-                    <div>
-                        <h1 class="text-2xl font-bold text-gray-900">Panel de Control</h1>
-                        <p class="text-sm text-gray-500">
-                            Bienvenido de vuelta, <span class="font-medium text-gray-900">{{ Auth::user()->full_name }}</span>
-                        </p>
-                    </div>
-                </div>
-                <div class="flex items-center space-x-3">
-                    <a
-                        href="{{ route('asesor.reports') }}"
-                        class="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors">
-                        <i data-lucide="file-text" class="w-4 h-4"></i>
-                        Reportes del Día
-                    </a>
-                    <form method="POST" action="{{ route('logout') }}" class="inline">
-                        @csrf
-                        <button
-                            type="submit"
-                            class="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-red-50 hover:text-red-600 hover:border-red-300 transition-colors">
-                            Cerrar Sesión
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-
+<div class="min-h-screen">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Stats Cards -->
         <!-- Stats Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-lg rounded-lg p-6">
@@ -105,7 +71,7 @@
                             </div>
                             <button
                                 type="submit"
-                                class="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center">
+                                class="w-full h-12 bg-blue-500 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center">
                                 <i data-lucide="search" class="w-5 h-5 mr-2"></i>
                                 <span id="searchButtonText">Buscar Cliente</span>
                             </button>
@@ -137,8 +103,8 @@
                         <div id="clientDetails" class="mt-8 space-y-6 hidden">
                             <!-- Content will be populated by JavaScript -->
                         </div>
-                                                <div class="bg-white shadow-lg border-0 rounded-lg mt-6">
-                            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-b p-6">
+                        <div class="bg-white shadow-lg border border-gray-300 rounded-lg mt-6">
+                            <div class="bg-gradient-to-r from-blue-200 to-indigo-50 border-b p-6">
                                 <h2 class="flex items-center gap-2 text-xl font-semibold">
                                     <i data-lucide="calculator" class="w-5 h-5 text-blue-600"></i>
                                     Cierre de Caja
@@ -187,7 +153,7 @@
                                     <div id="cashClosingButtonContainer">
                                         <button
                                             onclick="togglePaymentOptions()"
-                                            class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
+                                            class="px-6 py-3 bg-blue-500 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
                                             <i data-lucide="calculator" class="w-5 h-5"></i>
                                             Realizar Cierre de Caja
                                         </button>
@@ -496,8 +462,9 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="bg-white shadow-lg border-0 rounded-lg">
-                            <div class="bg-gradient-to-r from-green-50 to-emerald-50 border-b p-6">
+                        <div class="border-t-4 border-[#060147] my-6"></div>
+                        <div class="bg-white shadow-lg border border-gray-300 rounded-lg mt-6">
+                            <div class="bg-gradient-to-r from-green-50 to-emerald-200 border-b p-6">
                                 <h2 class="flex items-center gap-2 text-xl font-semibold">
                                     <i data-lucide="calendar" class="w-5 h-5 text-green-600"></i>
                                     Pagos de Hoy
@@ -505,6 +472,23 @@
                             </div>
                             <div class="p-6">
                                 <div id="todayPaymentsList">
+                                    <!-- Content will be populated by JavaScript -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Payment History Section -->
+                        <div class="bg-white shadow-lg border-0 rounded-lg" style="display: none;">
+                            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-b p-6">
+                                <div class="flex items-center gap-2">
+                                    <h2 class="flex items-center gap-2 text-xl font-semibold">
+                                        <i data-lucide="history" class="w-5 h-5 text-blue-600"></i>
+                                        Historial de Pagos
+                                    </h2>
+                                </div>
+                            </div>
+                            <div class="p-6">
+                                <div id="paymentHistoryList" class="space-y-3">
                                     <!-- Content will be populated by JavaScript -->
                                 </div>
                             </div>
@@ -1405,6 +1389,18 @@
                                                     <span class="font-semibold">${numberFormat(loan.amount)}</span>
                                                 </div>
                                                 <div class="flex items-center gap-2">
+                                                    <i data-lucide="credit-card" class="w-4 h-4 text-gray-400"></i>
+                                                    <span class="text-gray-500">Cuota ${loan.tipo_credito === 'credito_diario' ? 'diaria' : loan.tipo_credito === 'credito_semanal' ? 'semanal' : 'mensual'}:</span>
+                                                    <span class="font-semibold text-blue-600">${numberFormat(loan.monthly_payment)}</span>
+                                                </div>
+                                                <div class="flex items-center gap-2">
+                                                    <i data-lucide="alert-triangle" class="w-4 h-4 text-gray-400"></i>
+                                                    <span class="text-gray-500">Cuotas retrasadas:</span>
+                                                    <span class="font-semibold ${loan.installments && loan.installments.filter(i => i.status !== 'paid' && new Date(i.due_date) < new Date()).length > 0 ? 'text-red-600' : 'text-green-600'}">
+                                                        ${loan.installments ? loan.installments.filter(i => i.status !== 'paid' && new Date(i.due_date) < new Date()).length : '0'}
+                                                    </span>
+                                                </div>
+                                                <div class="flex items-center gap-2">
                                                     <i data-lucide="trending-up" class="w-4 h-4 text-gray-400"></i>
                                                     <span class="text-gray-500">Saldo pendiente:</span>
                                                     <span class="font-semibold text-orange-600">${numberFormat(loan.amount - (loan.paid_amount || 0))}</span>
@@ -1421,10 +1417,6 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <a href="{{ route('asesor.collection') }}?clientId=${client.id}" class="ml-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
-                                            <i data-lucide="arrow-right" class="w-4 h-4"></i>
-                                            Cobrar
-                                        </a>
                                     </div>
                                 </div>
                             `).join('')}
@@ -1464,10 +1456,6 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <button class="ml-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
-                                            <i data-lucide="plus" class="w-4 h-4"></i>
-                                            Depositar
-                                        </button>
                                     </div>
                                 </div>
                             `).join('')}
@@ -1498,8 +1486,20 @@
 
         async function loadTodayPayments() {
             try {
-                const response = await fetch('{{ route('asesor.today-payments') }}');
+                console.log('🔄 Cargando pagos de hoy...');
+                
+                const response = await fetch('{{ route("asesor.today-payments") }}');
                 const result = await response.json();
+                
+                console.log('📊 Respuesta de pagos de hoy:', result);
+                
+                const todayPaymentsList = document.getElementById('todayPaymentsList');
+                
+                // Validar que el elemento exista
+                if (!todayPaymentsList) {
+                    console.warn('⚠️ Elemento todayPaymentsList no encontrado');
+                    return;
+                }
 
                 if (result.success && result.data) {
                     todayPaymentsList.innerHTML = result.data.map(payment => `
@@ -1518,8 +1518,20 @@
                                 }">
                                     ${payment.payment_method === 'yape' ? 'Yape' : 'Efectivo'}
                                 </span>
-                                <span class="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">
-                                    Pendiente
+                                <span class="text-xs px-2 py-1 rounded-full ${
+                                    payment.status === 'pending_review' 
+                                        ? 'bg-orange-100 text-orange-700' 
+                                        : payment.status === 'paid'
+                                            ? 'bg-green-100 text-green-700'
+                                                : 'bg-yellow-100 text-yellow-700'
+                                }">
+                                    ${
+                                        payment.status === 'pending_review' 
+                                            ? 'En revisión' 
+                                            : payment.status === 'paid'
+                                                ? 'Pagado'
+                                                    : 'Pendiente'
+                                    }
                                 </span>
                             </div>
                         </div>
@@ -1641,6 +1653,73 @@
             }
         }
 
+        // Función para cargar historial de pagos
+        async function loadPaymentHistory() {
+            try {
+                console.log('🔄 Cargando historial de pagos...');
+                
+                const response = await fetch('{{ route("asesor.payment-history") }}');
+                const result = await response.json();
+                
+                console.log('📊 Respuesta del historial:', result);
+                
+                const paymentHistoryList = document.getElementById('paymentHistoryList');
+                
+                // Validar que el elemento exista
+                if (!paymentHistoryList) {
+                    console.warn('⚠️ Elemento paymentHistoryList no encontrado');
+                    return;
+                }
+
+                if (result.success && result.data) {
+                    paymentHistoryList.innerHTML = result.data.map(payment => `
+                    <div class="flex items-center justify-between py-3 border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-900">${payment.client_name}</p>
+                            <p class="text-sm text-gray-500">${payment.client_dni}</p>
+                            <p class="text-xs text-gray-400">${payment.payment_date}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-semibold text-green-600">${numberFormat(payment.amount, 2)}</p>
+                            <div class="flex items-center gap-2 justify-end mt-1">
+                                <span class="text-xs px-2 py-1 rounded-full ${
+                                    payment.payment_method === 'yape' 
+                                        ? 'bg-blue-100 text-blue-700' 
+                                        : 'bg-green-100 text-green-700'
+                                }">
+                                    ${payment.payment_method === 'yape' ? 'Yape' : 'Efectivo'}
+                                </span>
+                                <span class="text-xs px-2 py-1 rounded-full ${
+                                    payment.status === 'pending_review' 
+                                        ? 'bg-orange-100 text-orange-700' 
+                                        : payment.status === 'paid'
+                                            ? 'bg-green-100 text-green-700'
+                                                : 'bg-yellow-100 text-yellow-700'
+                                }">
+                                    ${
+                                        payment.status === 'pending_review' 
+                                            ? 'En revisión' 
+                                            : payment.status === 'paid'
+                                                ? 'Pagado'
+                                                    : 'Pendiente'
+                                    }
+                                </span>
+                                <span class="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-600">
+                                    ${payment.type === 'préstamo' ? 'Préstamo #' + payment.installment_number : 'Ahorro #' + payment.savings_id}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                } else {
+                    paymentHistoryList.innerHTML = '<p class="text-gray-500 text-center py-4">Error al cargar historial</p>';
+                }
+            } catch (error) {
+                console.error('Error loading payment history:', error);
+                paymentHistoryList.innerHTML = '<p class="text-gray-500 text-center py-4">Error al cargar historial</p>';
+            }
+        }
+
         function updateCashClosingTotals(payments) {
             let totalIncome = 0;
             let yapePayments = 0;
@@ -1707,6 +1786,14 @@
             try {
                 const response = await fetch('{{ route('asesor.recent-clients') }}');
                 const result = await response.json();
+                
+                const recentClientsList = document.getElementById('recent-clients-list');
+                
+                // Validar que el elemento exista
+                if (!recentClientsList) {
+                    console.warn('⚠️ Elemento recent-clients-list no encontrado');
+                    return;
+                }
 
                 if (result.success && result.data) {
                     recentClientsList.innerHTML = result.data.map(client => `
@@ -1756,6 +1843,24 @@
             searchInput.value = clientDni;
             // Trigger search
             searchForm.dispatchEvent(new Event('submit'));
+        }
+    });
+
+    // =============================
+    // Función para menú móvil
+    // =============================
+    function toggleMobileMenu() {
+        const menu = document.getElementById('mobileMenu');
+        menu.classList.toggle('hidden');
+    }
+
+    // Cerrar menú al hacer clic fuera
+    document.addEventListener('click', function(event) {
+        const menu = document.getElementById('mobileMenu');
+        const menuButton = event.target.closest('button[onclick="toggleMobileMenu()"]');
+        
+        if (!menu.contains(event.target) && !menuButton) {
+            menu.classList.add('hidden');
         }
     });
 </script>

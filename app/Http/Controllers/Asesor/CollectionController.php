@@ -16,15 +16,41 @@ class CollectionController extends Controller
 {
     public function index(Request $request)
     {
+        Log::info('Collection index llamado');
+        
         $clientId = $request->get('clientId');
+        Log::info('Client ID: ' . $clientId);
         
         if (!$clientId) {
+            Log::error('Client ID no proporcionado');
             return redirect()->route('asesor.dashboard')
-                ->with('error', 'No se especificó un cliente');
+                ->with('error', 'Cliente no especificado');
+        }
+
+        // Verificar que el cliente tenga préstamos o ahorros con el asesor
+        $hasLoansWithAdvisor = Client::whereHas('loans', function($query) {
+            $query->where('advisor_id', Auth::id());
+        })->where('id', $clientId)->exists();
+
+        $hasSavingsWithAdvisor = Client::whereHas('savings', function($query) {
+            $query->where('advisor_id', Auth::id());
+        })->where('id', $clientId)->exists();
+
+        if (!$hasLoansWithAdvisor && !$hasSavingsWithAdvisor) {
+            Log::error('Cliente no encontrado o no asignado a este asesor');
+            return redirect()->route('asesor.dashboard')
+                ->with('error', 'Cliente no encontrado o no asignado a este asesor');
         }
 
         $client = Client::where('id', $clientId)
-            ->where('advisor_id', Auth::id())
+            ->where(function($query) {
+                $query->whereHas('loans', function($subQuery) {
+                    $subQuery->where('advisor_id', Auth::id());
+                })
+                ->orWhereHas('savings', function($subQuery) {
+                    $subQuery->where('advisor_id', Auth::id());
+                });
+            })
             ->with([
                 'loans.loanStatus',
                 'loans.installments' => function ($query) {
@@ -34,6 +60,35 @@ class CollectionController extends Controller
             ])
             ->firstOrFail();
 
+        Log::info('Cliente encontrado: ' . $client->id);
+
+        // Si es una solicitud AJAX, devolver JSON con datos de cuotas
+        if ($request->ajax() || $request->wantsJson()) {
+            $installmentsData = [];
+            
+            foreach ($client->loans as $loan) {
+                foreach ($loan->installments as $installment) {
+                    $installmentsData[] = [
+                        'id' => $installment->id,
+                        'installment_number' => $installment->installment_number,
+                        'amount' => $installment->amount,
+                        'paid_amount' => $installment->paid_amount,
+                        'status' => $installment->status,
+                        'due_date' => $installment->due_date,
+                        'payment_date' => $installment->payment_date,
+                        'payment_method' => $installment->payment_method,
+                        'loan_id' => $installment->loan_id
+                    ];
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'client_id' => $client->id,
+                'installments' => $installmentsData
+            ]);
+        }
+
         return view('asesor.collection', compact('client'));
     }
 
@@ -42,6 +97,77 @@ class CollectionController extends Controller
         Log::info('processPayment llamado - Inicio del método');
         Log::info('Datos recibidos:', $request->all());
         
+        // Verificar si es un pago individual de cuota
+        if ($request->has('installment_id')) {
+            Log::info('Procesando pago individual de cuota...');
+            
+            $request->validate([
+                'installment_id' => 'required|exists:installments,id',
+                'amount' => 'required|numeric|min:0.01',
+                'payment_method' => 'required|string|in:yape,efectivo,transferencia',
+                'client_id' => 'required|exists:clients,id'
+            ]);
+            
+            Log::info('Validación pasada para pago individual');
+            
+            // Obtener la cuota específica
+            $installment = \App\Models\Installment::with('loan')->find($request->installment_id);
+            
+            if (!$installment) {
+                Log::error('Cuota no encontrada: ' . $request->installment_id);
+                return response()->json(['success' => false, 'message' => 'Cuota no encontrada'], 404);
+            }
+            
+            // Verificar que el préstamo pertenezca al asesor
+            if ($installment->loan->advisor_id !== Auth::id()) {
+                Log::error('Préstamo no pertenece al asesor: ' . $installment->loan->advisor_id . ' vs ' . Auth::id());
+                return response()->json(['success' => false, 'message' => 'No tiene permiso para procesar este pago'], 403);
+            }
+            
+            // Verificar que el cliente coincida
+            if ($installment->loan->client_id != $request->client_id) {
+                Log::error('Cliente no coincide: ' . $installment->loan->client_id . ' vs ' . $request->client_id);
+                return response()->json(['success' => false, 'message' => 'Cliente no válido para esta cuota'], 400);
+            }
+            
+            // Verificar que la cuota esté pendiente
+            if ($installment->status !== 'pending') {
+                Log::error('Cuota no está pendiente: ' . $installment->status);
+                return response()->json(['success' => false, 'message' => 'Esta cuota ya ha sido procesada'], 400);
+            }
+            
+            // Actualizar la cuota
+            $installment->paid_amount = $request->amount;
+            $installment->status = 'pending_review';
+            $installment->payment_date = now();
+            $installment->payment_method = $request->payment_method;
+            
+            // Manejar el comprobante de pago si es Yape
+            if ($request->payment_method === 'yape' && $request->hasFile('payment_proof')) {
+                $paymentProof = $request->file('payment_proof');
+                $proofUrl = S3Service::uploadImage($paymentProof, 'yape-comprobantes');
+                $installment->payment_proof = $proofUrl;
+                Log::info('Comprobante Yape guardado en S3: ' . $proofUrl);
+            }
+            
+            $installment->save();
+            
+            Log::info('Cuota actualizada correctamente: ' . $installment->id);
+            
+            // Respuesta JSON para AJAX
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Pago de cuota procesado correctamente'
+                ]);
+            }
+            
+            // Redirección para solicitudes normales
+            return redirect()->route('asesor.collection', ['clientId' => $request->client_id])
+                ->with('success', 'Pago de cuota procesado correctamente');
+        }
+        
+        // Lógica original para pagos múltiples (si no hay installment_id)
         $paymentTypes = $request->input('payment_type', []);
         Log::info('Payment types:', $paymentTypes);
         
@@ -84,13 +210,13 @@ class CollectionController extends Controller
                 }
             }
 
-            $loan = Loan::findOrFail($request->loan_id);
+            $loan = Loan::where('id', $request->loan_id)
+                ->where('advisor_id', Auth::id())
+                ->findOrFail($request->loan_id);
             Log::info('Préstamo encontrado: ' . $loan->id);
             
-            // Verificar que el préstamo pertenezca a un cliente del asesor
-            $client = Client::where('id', $loan->client_id)
-                ->where('advisor_id', Auth::id())
-                ->firstOrFail();
+            // Verificar que el cliente exista
+            $client = Client::findOrFail($loan->client_id);
             Log::info('Cliente verificado: ' . $client->id);
 
             // Encontrar la cuota más antigua con estado "pending" (excluyendo las que ya están en revisión)
@@ -165,12 +291,25 @@ class CollectionController extends Controller
                 }
             }
 
-            $client = Client::where('id', $request->client_id)
-                ->where('advisor_id', Auth::id())
-                ->firstOrFail();
+            // Verificar que el cliente tenga préstamos o ahorros con el asesor
+            $hasLoansWithAdvisor = Client::whereHas('loans', function($query) {
+                $query->where('advisor_id', Auth::id());
+            })->where('id', $request->client_id)->exists();
+
+            $hasSavingsWithAdvisor = Client::whereHas('savings', function($query) {
+                $query->where('advisor_id', Auth::id());
+            })->where('id', $request->client_id)->exists();
+
+            if (!$hasLoansWithAdvisor && !$hasSavingsWithAdvisor) {
+                return redirect()->route('asesor.dashboard')
+                    ->with('error', 'Cliente no encontrado o no asignado a este asesor');
+            }
+
+            $client = Client::findOrFail($request->client_id);
 
             $savings = Savings::where('id', $request->savings_id)
                 ->where('client_id', $client->id)
+                ->where('advisor_id', Auth::id())
                 ->firstOrFail();
 
             // Encontrar la cuota de ahorro más antigua con estado "pending"
@@ -226,6 +365,15 @@ class CollectionController extends Controller
             $message = 'Se procesó correctamente: ' . implode(' y ', $processedTypes);
         }
 
+        // Si es una solicitud AJAX, devolver JSON
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message
+            ]);
+        }
+
+        // Si es una solicitud normal, hacer redirect
         return redirect()->route('asesor.collection', ['clientId' => $request->client_id])
             ->with('success', $message);
     }
@@ -239,12 +387,25 @@ class CollectionController extends Controller
             'savings_payment_method' => 'required|string|in:yape,efectivo,transferencia'
         ]);
 
-        $client = Client::where('id', $request->client_id)
-            ->where('advisor_id', Auth::id())
-            ->firstOrFail();
+        // Verificar que el cliente tenga préstamos o ahorros con el asesor
+        $hasLoansWithAdvisor = Client::whereHas('loans', function($query) {
+            $query->where('advisor_id', Auth::id());
+        })->where('id', $request->client_id)->exists();
+
+        $hasSavingsWithAdvisor = Client::whereHas('savings', function($query) {
+            $query->where('advisor_id', Auth::id());
+        })->where('id', $request->client_id)->exists();
+
+        if (!$hasLoansWithAdvisor && !$hasSavingsWithAdvisor) {
+            return redirect()->route('asesor.dashboard')
+                ->with('error', 'Cliente no encontrado o no asignado a este asesor');
+        }
+
+        $client = Client::findOrFail($request->client_id);
 
         $savings = Savings::where('id', $request->savings_id)
             ->where('client_id', $client->id)
+            ->where('advisor_id', Auth::id())
             ->firstOrFail();
 
         // Actualizar monto de ahorros

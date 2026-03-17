@@ -7,10 +7,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\Client;
-use App\Models\Loan;
-use App\Models\Savings;
-use App\Models\Installment;
-use App\Models\LoanStatus;
 
 class ClientSearchController extends Controller
 {
@@ -33,16 +29,33 @@ class ClientSearchController extends Controller
 
             $advisorId = $user->id;
 
-            // Búsqueda con relaciones completas
+            // Búsqueda de clientes que tienen préstamos o ahorros asignados al asesor actual
+            // Usamos una subconsulta para obtener los IDs de clientes que tienen préstamos con el asesor
+            $clientsWithLoans = Client::whereHas('loans', function($query) use ($advisorId) {
+                $query->where('advisor_id', $advisorId);
+            })->pluck('id');
+
+            // Usamos una subconsulta para obtener los IDs de clientes que tienen ahorros con el asesor
+            $clientsWithSavings = Client::whereHas('savings', function($query) use ($advisorId) {
+                $query->where('advisor_id', $advisorId);
+            })->pluck('id');
+
+            // Combinamos ambos conjuntos de IDs y eliminamos duplicados
+            $clientIds = $clientsWithLoans->merge($clientsWithSavings)->unique();
+
+            // Búsqueda con relaciones completas filtrando por los IDs de clientes encontrados
             $query = Client::with([
-                'loans' => function($query) {
-                    $query->with('status')
-                         ->with(['installments' => function($query) {
+                'loans' => function($query) use ($advisorId) {
+                    $query->where('advisor_id', $advisorId)
+                          ->with('status')
+                          ->with(['installments' => function($query) {
                             $query->orderBy('due_date', 'asc');
                         }]);
                 },
-                'savings'
-            ])->where('advisor_id', $advisorId);
+                'savings' => function($query) use ($advisorId) {
+                    $query->where('advisor_id', $advisorId);
+                }
+            ])->whereIn('id', $clientIds);
 
             if ($searchTerm && trim($searchTerm) !== '') {
                 $query->where(function($q) use ($searchTerm) {
@@ -168,17 +181,33 @@ class ClientSearchController extends Controller
     public function getClient($id)
     {
         $user = Auth::user();
+        $advisorId = $user->id;
         
-        // Verificar que el cliente pertenezca al asesor usando Eloquent
+        // Verificar que el cliente tenga préstamos o ahorros asignados al asesor actual
+        $hasLoansWithAdvisor = Client::whereHas('loans', function($query) use ($advisorId) {
+            $query->where('advisor_id', $advisorId);
+        })->where('id', $id)->exists();
+
+        $hasSavingsWithAdvisor = Client::whereHas('savings', function($query) use ($advisorId) {
+            $query->where('advisor_id', $advisorId);
+        })->where('id', $id)->exists();
+
+        if (!$hasLoansWithAdvisor && !$hasSavingsWithAdvisor) {
+            return response()->json(['error' => 'Cliente no encontrado o no asignado a este asesor'], 404);
+        }
+        
+        // Obtener el cliente con sus préstamos y ahorros del asesor
         $client = Client::with([
-            'loans' => function($query) {
-                $query->with(['status', 'installments' => function($query) {
-                    $query->orderBy('due_date', 'asc');
-                }]);
+            'loans' => function($query) use ($advisorId) {
+                $query->where('advisor_id', $advisorId)
+                      ->with(['status', 'installments' => function($query) {
+                        $query->orderBy('due_date', 'asc');
+                    }]);
             },
-            'savings'
+            'savings' => function($query) use ($advisorId) {
+                $query->where('advisor_id', $advisorId);
+            }
         ])->where('id', $id)
-          ->where('advisor_id', $user->id)
           ->first();
 
         if (!$client) {
@@ -247,6 +276,7 @@ class ClientSearchController extends Controller
     {
         try {
             $user = Auth::user();
+            $advisorId = $user->id;
             
             if (!$user) {
                 return response()->json([
@@ -255,9 +285,23 @@ class ClientSearchController extends Controller
                 ], 401);
             }
 
-            // Obtener clientes recientes del asesor
-            $clients = Client::where('advisor_id', $user->id)
-                ->withCount('loans')
+            // Obtener IDs de clientes que tienen préstamos o ahorros con el asesor
+            $clientsWithLoans = Client::whereHas('loans', function($query) use ($advisorId) {
+                $query->where('advisor_id', $advisorId);
+            })->pluck('id');
+
+            $clientsWithSavings = Client::whereHas('savings', function($query) use ($advisorId) {
+                $query->where('advisor_id', $advisorId);
+            })->pluck('id');
+
+            // Combinar IDs y eliminar duplicados
+            $clientIds = $clientsWithLoans->merge($clientsWithSavings)->unique();
+
+            // Obtener clientes recientes con conteo de préstamos del asesor
+            $clients = Client::whereIn('id', $clientIds)
+                ->withCount(['loans' => function($query) use ($advisorId) {
+                    $query->where('advisor_id', $advisorId);
+                }])
                 ->orderBy('created_at', 'desc')
                 ->take(10)
                 ->get();

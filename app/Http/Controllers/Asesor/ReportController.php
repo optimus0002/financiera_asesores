@@ -7,9 +7,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use App\Models\Payment;
-use App\Models\Client;
-use App\Models\Loan;
 use App\Services\S3Service;
 
 class ReportController extends Controller
@@ -19,16 +16,27 @@ class ReportController extends Controller
         $user = Auth::user();
         $today = now()->format('Y-m-d');
 
-        // Obtener pagos del día
-        $todayPayments = Payment::whereDate('created_at', $today)
-            ->whereHas('loan.client', function ($query) use ($user) {
+        // Obtener pagos de préstamos del día
+        $loanPayments = \App\Models\Installment::whereDate('payment_date', $today)
+            ->whereHas('loan', function ($query) use ($user) {
                 $query->where('advisor_id', $user->id);
             })
             ->with(['loan.client', 'loan.loanStatus'])
             ->get();
 
+        // Obtener pagos de ahorros del día
+        $savingsPayments = \App\Models\SavingsInstallment::whereDate('payment_date', $today)
+            ->whereHas('savings', function ($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })
+            ->with(['savings.client'])
+            ->get();
+
+        // Combinar todos los pagos del día
+        $todayPayments = $loanPayments->concat($savingsPayments);
+
         // Estadísticas del día
-        $totalAmount = $todayPayments->sum('amount');
+        $totalAmount = $todayPayments->sum('paid_amount');
         $totalTransactions = $todayPayments->count();
         $averagePayment = $totalTransactions > 0 ? $totalAmount / $totalTransactions : 0;
 
@@ -37,7 +45,7 @@ class ReportController extends Controller
             ->map(function ($payments) {
                 return [
                     'count' => $payments->count(),
-                    'total' => $payments->sum('amount')
+                    'total' => $payments->sum('paid_amount')
                 ];
             });
 
@@ -58,7 +66,7 @@ class ReportController extends Controller
         // Obtener pagos de préstamos del día desde installments
         $loanPayments = \App\Models\Installment::whereDate('payment_date', $today)
             ->where('status', 'pending_review')
-            ->whereHas('loan.client', function ($query) use ($user) {
+            ->whereHas('loan', function ($query) use ($user) {
                 $query->where('advisor_id', $user->id);
             })
             ->with(['loan.client'])
@@ -78,7 +86,7 @@ class ReportController extends Controller
         // Obtener depósitos de ahorros del día desde savings_installments
         $savingsPayments = \App\Models\SavingsInstallment::whereDate('payment_date', $today)
             ->where('status', 'pending_review')
-            ->whereHas('savings.client', function ($query) use ($user) {
+            ->whereHas('savings', function ($query) use ($user) {
                 $query->where('advisor_id', $user->id);
             })
             ->with(['savings.client'])
@@ -405,5 +413,174 @@ class ReportController extends Controller
                 'message' => 'Error al verificar estado de cierre de caja: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function paymentHistoryView()
+    {
+        return view('asesor.payment-history');
+    }
+
+    public function paymentHistory(Request $request)
+    {
+        $user = Auth::user();
+        
+        // Logging para depuración
+        Log::info('Usuario autenticado para historial:', [
+            'user_id' => $user->id ?? 'null',
+            'user_email' => $user->email ?? 'null',
+            'user_name' => $user->name ?? 'null',
+            'advisor_id' => $user->id ?? 'null'
+        ]);
+
+        // Obtener parámetros de fecha
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        $limit = $request->get('limit', 50); // Límite por defecto
+
+        // Si no hay fechas, mostrar últimos 30 días
+        if (!$startDate) {
+            $startDate = now()->subDays(30)->format('Y-m-d');
+            $endDate = now()->format('Y-m-d');
+        }
+
+        Log::info('Parámetros de historial:', [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'limit' => $limit
+        ]);
+
+        // Obtener pagos de préstamos en el rango de fechas
+        $loanPayments = \App\Models\Installment::whereHas('loan', function ($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })
+            ->whereIn('status', ['pending_review', 'paid'])
+            ->whereHas('loan.client', function ($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })
+            ->with(['loan.client', 'loan'])
+            ->whereBetween('payment_date', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->orderBy('payment_date', 'desc')
+            ->limit($limit)
+            ->get()
+            ->map(function ($installment) {
+                return [
+                    'id' => $installment->id,
+                    'amount' => $installment->paid_amount,
+                    'payment_method' => $installment->payment_method,
+                    'payment_date' => $installment->payment_date->format('Y-m-d H:i:s'),
+                    'client_name' => $installment->loan->client->full_name,
+                    'client_dni' => $installment->loan->client->dni,
+                    'loan_id' => $installment->loan->id,
+                    'installment_number' => $installment->installment_number,
+                    'status' => $installment->status,
+                    'type' => 'préstamo'
+                ];
+            });
+
+        // Obtener pagos de ahorros en el rango de fechas
+        $savingsPayments = \App\Models\SavingsInstallment::whereHas('savings', function ($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })
+            ->whereIn('status', ['pending_review', 'paid'])
+            ->whereHas('savings.client', function ($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })
+            ->with(['savings.client', 'savings'])
+            ->whereBetween('payment_date', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->orderBy('payment_date', 'desc')
+            ->limit($limit)
+            ->get()
+            ->map(function ($installment) {
+                return [
+                    'id' => $installment->id,
+                    'amount' => $installment->paid_amount,
+                    'payment_method' => $installment->payment_method,
+                    'payment_date' => $installment->payment_date->format('Y-m-d H:i:s'),
+                    'client_name' => $installment->savings->client->full_name,
+                    'client_dni' => $installment->savings->client->dni,
+                    'savings_id' => $installment->savings->id,
+                    'status' => $installment->status,
+                    'type' => 'ahorros'
+                ];
+            });
+
+        // Combinar ambos resultados
+        $allPayments = $loanPayments->concat($savingsPayments)
+            ->sortBy('payment_date')
+            ->values();
+
+        Log::info('Historial obtenido:', [
+            'loan_payments_count' => $loanPayments->count(),
+            'savings_payments_count' => $savingsPayments->count(),
+            'total_payments' => $allPayments->count()
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $allPayments,
+            'pagination' => [
+                'current_page' => 1,
+                'per_page' => $limit,
+                'total' => $allPayments->count()
+            ]
+        ]);
+    }
+
+    private function getTodayPaymentsForClosing($user)
+    {
+        $today = now()->format('Y-m-d');
+
+        // Obtener pagos de préstamos del día
+        $loanPayments = \App\Models\Installment::whereHas('loan', function ($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })
+            ->where('status', 'pending_review')
+            ->whereHas('loan.client', function ($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })
+            ->with(['loan.client'])
+            ->whereDate('payment_date', $today)
+            ->get()
+            ->map(function ($installment) {
+                return [
+                    'id' => $installment->id,
+                    'amount' => $installment->paid_amount,
+                    'payment_method' => $installment->payment_method,
+                    'created_at' => $installment->payment_date->format('Y-m-d H:i:s'),
+                    'client_name' => $installment->loan->client->full_name,
+                    'client_dni' => $installment->loan->client->dni,
+                    'type' => 'préstamo'
+                ];
+            });
+
+        // Obtener depósitos de ahorros del día
+        $savingsPayments = \App\Models\SavingsInstallment::whereHas('savings', function ($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })
+            ->where('status', 'pending_review')
+            ->whereHas('savings.client', function ($query) use ($user) {
+                $query->where('advisor_id', $user->id);
+            })
+            ->with(['savings.client'])
+            ->whereDate('payment_date', $today)
+            ->get()
+            ->map(function ($installment) {
+                return [
+                    'id' => $installment->id,
+                    'amount' => $installment->paid_amount,
+                    'payment_method' => $installment->payment_method,
+                    'created_at' => $installment->payment_date->format('Y-m-d H:i:s'),
+                    'client_name' => $installment->savings->client->full_name,
+                    'client_dni' => $installment->savings->client->dni,
+                    'type' => 'ahorros'
+                ];
+            });
+
+        // Combinar ambos resultados
+        $allPayments = $loanPayments->concat($savingsPayments)
+            ->sortBy('created_at')
+            ->values();
+
+        return $allPayments;
     }
 }

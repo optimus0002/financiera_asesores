@@ -41,6 +41,8 @@ Route::middleware(['auth'])->prefix('asesor')->name('asesor.')->group(function (
     Route::post('/savings-deposit', [CollectionController::class, 'savingsDeposit'])->name('savings.deposit');
     Route::get('/reports', [ReportController::class, 'index'])->name('reports');
     Route::get('/today-payments', [ReportController::class, 'todayPayments'])->name('today-payments');
+    Route::get('/payment-history', [ReportController::class, 'paymentHistory'])->name('payment-history');
+    Route::get('/payment-history-view', [ReportController::class, 'paymentHistoryView'])->name('payment-history.view');
     Route::post('/cash-closing', [ReportController::class, 'cashClosing'])->name('cash-closing');
     Route::get('/cash-closing-status', [ReportController::class, 'checkCashClosingStatus'])->name('cash-closing-status');
 });

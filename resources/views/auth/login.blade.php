@@ -3,12 +3,13 @@
 @section('title', 'Login - Sistema Financiero')
 
 @section('content')
-<div class="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+<div class="min-h-screen flex items-center justify-center p-4">
     <div class="w-full max-w-md">
         <div class="bg-white shadow-lg rounded-lg p-8">
             <div class="text-center mb-8">
-                <h1 class="text-3xl font-bold text-gray-900 mb-2">Sistema Financiero</h1>
-                <p class="text-gray-600">Ingresa tus credenciales para continuar</p>
+                <img src="{{ asset('images/logo.png') }}" alt="FINANCIERA PRISMA" class="w-24 h-24 mx-auto mb-4">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">FINANCIERA PRISMA</h1>
+                <p class="text-gray-600">Sistema Integral Financiero</p>
             </div>
 
             @if ($errors->any())
@@ -20,8 +21,20 @@
                 </div>
             @endif
 
-            <form method="POST" action="{{ route('login') }}" class="space-y-6">
+            <form method="POST" action="{{ route('login') }}" class="space-y-6" id="loginForm">
                 @csrf
+                
+                <!-- Mensaje de restricción horaria -->
+                <div id="timeRestriction" class="hidden mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div class="flex items-center">
+                        <i data-lucide="clock" class="w-5 h-5 text-yellow-600 mr-3"></i>
+                        <div>
+                            <p class="text-yellow-800 font-medium">Horario de Acceso Restringido</p>
+                            <p class="text-yellow-700 text-sm mt-1">El sistema está disponible de <strong>Lunes a Sábado, 8:15 AM a 6:00 PM</strong></p>
+                            <p class="text-yellow-600 text-sm mt-1">Por favor, intente nuevamente después de las 8:15 AM.</p>
+                        </div>
+                    </div>
+                </div>
                 
                 <div>
                     <label for="dni" class="block text-sm font-medium text-gray-700 mb-2">
@@ -71,6 +84,35 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         lucide.createIcons();
+        
+        // Validar horario de acceso
+        const loginForm = document.getElementById('loginForm');
+        const timeRestrictionDiv = document.getElementById('timeRestriction');
+        
+        if (loginForm && timeRestrictionDiv) {
+            loginForm.addEventListener('submit', function(e) {
+                const now = new Date();
+                const currentHour = now.getHours();
+                const currentDay = now.getDay(); // 0 = Domingo, 6 = Sábado
+                
+                // Verificar si es fin de semana (Domingo = 0, Sábado = 6)
+                const isWeekend = currentDay === 0 || currentDay === 6;
+                
+                // Verificar si está antes de las 8:15 AM
+                const isBefore815 = currentHour < 8 || (currentHour === 8 && now.getMinutes() < 15);
+                
+                // Mostrar mensaje si es fin de semana o antes de las 8:15 AM
+                if (isWeekend || isBefore815) {
+                    e.preventDefault();
+                    timeRestrictionDiv.classList.remove('hidden');
+                    
+                    // Ocultar mensaje después de 5 segundos
+                    setTimeout(() => {
+                        timeRestrictionDiv.classList.add('hidden');
+                    }, 5000);
+                }
+            });
+        }
     });
 </script>
 @endpush
