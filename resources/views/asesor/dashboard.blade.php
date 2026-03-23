@@ -3,6 +3,20 @@
 @section('title', 'Panel de Control - Asesor')
 
 @section('content')
+<!-- Toast Flotante -->
+<div id="successToast" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg transform translate-y-full opacity-0 transition-all duration-500 ease-out z-50 flex items-center gap-3">
+    <div class="flex-shrink-0">
+        <i data-lucide="check-circle" class="w-6 h-6"></i>
+    </div>
+    <div class="flex-1">
+        <p class="font-semibold text-white">Cierre de caja realizado correctamente</p>
+        <p class="text-green-100 text-sm">La operación se completó con éxito</p>
+    </div>
+    <button onclick="hideToast()" class="flex-shrink-0 text-white hover:text-green-100 transition-colors">
+        <i data-lucide="x" class="w-5 h-5"></i>
+    </button>
+</div>
+
 <div class="min-h-screen">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <!-- Stats Cards -->
@@ -301,29 +315,27 @@
 
                                                     <!-- Yape Payment Proof -->
                                                     <div class="mt-4">
-                                                        <label class="block text-sm font-medium text-gray-700 mb-2">Comprobante de Pago Yape</label>
+                                                        <label class="block text-sm font-medium text-gray-700 mb-2">Comprobantes de Pago Yape</label>
                                                         <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-blue-400 transition-colors cursor-pointer"
-                                                            ondrop="handleDrop(event, 'yapeDashboard')"
-                                                            ondragover="handleDragOver(event)"
-                                                            ondragleave="handleDragLeave(event)"
                                                             onclick="document.getElementById('yapeDashboardFileInput').click()">
-
-                                                            <div id="yapeDashboardPreview" class="hidden mb-4">
-                                                                <img src="" alt="Vista previa del comprobante" class="mx-auto max-h-48 rounded-lg shadow-md">
-                                                                <p class="text-sm text-gray-600 mt-2">Comprobante cargado: <span id="yapeFileName"></span></p>
-                                                            </div>
 
                                                             <div id="yapeDashboardPlaceholder" class="text-center">
                                                                 <i data-lucide="upload-cloud" class="w-12 h-12 text-gray-400 mx-auto mb-2"></i>
-                                                                <p class="text-sm text-gray-600">Arrastra y suelta el comprobante aquí</p>
-                                                                <p class="text-xs text-gray-500 mt-1">o haz clic para seleccionar</p>
+                                                                <p class="text-sm text-gray-600">Haz clic para seleccionar múltiples comprobantes</p>
+                                                                <p class="text-xs text-gray-500 mt-1">Formatos: JPG, PNG (máx. 5MB)</p>
+                                                            </div>
+
+                                                            <div id="yapeDashboardPreview" class="mt-4 grid grid-cols-2 gap-2">
+                                                                <!-- Las vistas previas se agregarán aquí dinámicamente -->
                                                             </div>
 
                                                             <input type="file"
                                                                 id="yapeDashboardFileInput"
-                                                                accept="image/*"
+                                                                name="yape_dashboard_proof[]"
+                                                                accept="image/jpeg,image/jpg,image/png"
+                                                                multiple
                                                                 class="hidden"
-                                                                onchange="handleFileSelect(event, 'yapeDashboard')">
+                                                                onchange="previewDashboardProof(this)">
                                                         </div>
                                                     </div>
 
@@ -367,44 +379,28 @@
 
                                                     <!-- Campo para subir comprobante de Yape en mixto -->
                                                     <div class="mt-4">
-                                                        <label class="block text-sm font-medium text-gray-700 mb-2">Comprobante de Pago Yape</label>
+                                                        <label class="block text-sm font-medium text-gray-700 mb-2">Comprobantes de Pago Yape</label>
                                                         <div id="mixtoDropZone"
                                                             class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors cursor-pointer"
-                                                            ondrop="handleDrop(event, 'mixtoPreview')"
-                                                            ondragover="handleDragOver(event)"
-                                                            ondragleave="handleDragLeave(event)"
                                                             onclick="document.getElementById('mixtoFileInput').click()">
-
-                                                            <input type="file"
-                                                                id="mixtoFileInput"
-                                                                accept="image/*"
-                                                                class="hidden"
-                                                                onchange="handleFileSelect(event, 'mixtoPreview')">
 
                                                             <div id="mixtoUploadContent">
                                                                 <i data-lucide="upload-cloud" class="w-12 h-12 text-gray-400 mx-auto mb-3"></i>
-                                                                <p class="text-gray-600 mb-2">Arrastra la imagen del comprobante aquí</p>
-                                                                <p class="text-sm text-gray-500">o haz clic para seleccionar</p>
-                                                                <p class="text-xs text-gray-400 mt-2">Formatos: JPG, PNG, GIF (Máx. 5MB)</p>
+                                                                <p class="text-gray-600 mb-2">Haz clic para seleccionar múltiples comprobantes</p>
+                                                                <p class="text-sm text-gray-500">Formatos: JPG, PNG (máx. 5MB)</p>
                                                             </div>
 
-                                                            <div id="mixtoPreview" class="hidden">
-                                                                <img id="mixtoPreviewImage" src="" alt="Vista previa del comprobante" class="max-w-full max-h-64 mx-auto rounded-lg shadow-md">
-                                                                <div class="mt-3 flex justify-center gap-2">
-                                                                    <button type="button"
-                                                                        onclick="removeImage('mixtoPreview', 'mixtoFileInput', 'mixtoUploadContent')"
-                                                                        class="px-3 py-1 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition-colors">
-                                                                        <i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>
-                                                                        Eliminar
-                                                                    </button>
-                                                                    <button type="button"
-                                                                        onclick="document.getElementById('mixtoFileInput').click()"
-                                                                        class="px-3 py-1 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors">
-                                                                        <i data-lucide="refresh-cw" class="w-4 h-4 inline mr-1"></i>
-                                                                        Cambiar
-                                                                    </button>
-                                                                </div>
+                                                            <div id="mixtoPreview" class="mt-4 grid grid-cols-2 gap-2">
+                                                                <!-- Las vistas previas se agregarán aquí dinámicamente -->
                                                             </div>
+
+                                                            <input type="file"
+                                                                id="mixtoFileInput"
+                                                                name="yape_dashboard_proof[]"
+                                                                accept="image/jpeg,image/jpg,image/png"
+                                                                multiple
+                                                                class="hidden"
+                                                                onchange="previewDashboardProof(this)">
                                                         </div>
                                                     </div>
 
@@ -533,6 +529,40 @@
     }
 </style>
 <script>
+    // Funciones para el toast flotante
+    window.showSuccessToast = function() {
+        const toast = document.getElementById('successToast');
+        
+        // Primero asegurarse de que esté completamente oculto
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-full', 'opacity-0');
+        
+        // Forzar reflow para reiniciar la animación
+        void toast.offsetWidth;
+        
+        // Mostrar el toast con animación desde abajo
+        setTimeout(() => {
+            toast.classList.remove('translate-y-full', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+        }, 100);
+        
+        // Re-inicializar iconos Lucide para el toast
+        lucide.createIcons();
+        
+        // Ocultar automáticamente después de 4 segundos
+        setTimeout(() => {
+            hideToast();
+        }, 4000);
+    };
+    
+    window.hideToast = function() {
+        const toast = document.getElementById('successToast');
+        
+        // Ocultar con animación hacia abajo
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-full', 'opacity-0');
+    };
+
     // Funciones globales para que sean accesibles desde onclick
     function togglePaymentOptions() {
         const paymentOptionsSection = document.getElementById('paymentOptionsSection');
@@ -937,6 +967,126 @@
         reader.readAsDataURL(file);
     }
 
+    // Nueva función para manejar múltiples imágenes en dashboard
+    window.previewDashboardProof = function(input) {
+        const files = input.files;
+        if (!files || files.length === 0) return;
+
+        // Determinar qué contenedor usar según el ID del input
+        let previewContainer, placeholderContainer;
+        if (input.id === 'yapeDashboardFileInput') {
+            previewContainer = document.getElementById('yapeDashboardPreview');
+            placeholderContainer = document.getElementById('yapeDashboardPlaceholder');
+        } else if (input.id === 'mixtoFileInput') {
+            previewContainer = document.getElementById('mixtoPreview');
+            placeholderContainer = document.getElementById('mixtoUploadContent');
+        } else {
+            console.error('Input no reconocido:', input.id);
+            return;
+        }
+        
+        // Limpiar vistas previas anteriores
+        previewContainer.innerHTML = '';
+
+        Array.from(files).forEach((file, index) => {
+            // Validar tipo de archivo
+            if (!file.type.match('image.*')) {
+                alert(`El archivo "${file.name}" no es una imagen válida (JPG o PNG)`);
+                return;
+            }
+
+            // Validar tamaño (5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                alert(`El archivo "${file.name}" no debe ser mayor a 5MB`);
+                return;
+            }
+
+            // Mostrar vista previa
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const previewDiv = document.createElement('div');
+                previewDiv.className = 'relative group';
+                previewDiv.innerHTML = `
+                    <img src="${e.target.result}" alt="Vista previa ${index + 1}" class="w-full h-24 object-cover rounded-lg shadow-md">
+                    <button type="button" 
+                            onclick="removeDashboardImage(${index})" 
+                            class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                        <i data-lucide="x" class="w-3 h-3"></i>
+                    </button>
+                `;
+                previewContainer.appendChild(previewDiv);
+                
+                // Re-inicializar iconos Lucide para el nuevo botón
+                lucide.createIcons();
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Ocultar el placeholder si hay imágenes
+        if (files.length > 0) {
+            placeholderContainer.classList.add('hidden');
+        }
+
+        // Guardar referencia a los archivos
+        window.dashboardFiles = Array.from(files);
+        console.log('Archivos Yape cargados:', window.dashboardFiles.map(f => f.name));
+    };
+
+    window.removeDashboardImage = function(imageIndex) {
+        // Buscar ambos inputs posibles
+        const yapeInput = document.getElementById('yapeDashboardFileInput');
+        const mixtoInput = document.getElementById('mixtoFileInput');
+        
+        let input, previewContainer, placeholderContainer;
+        
+        // Determinar qué input y contenedores usar
+        if (yapeInput && window.dashboardFiles && window.dashboardFiles.length > 0) {
+            input = yapeInput;
+            previewContainer = document.getElementById('yapeDashboardPreview');
+            placeholderContainer = document.getElementById('yapeDashboardPlaceholder');
+        } else if (mixtoInput && window.dashboardFiles && window.dashboardFiles.length > 0) {
+            input = mixtoInput;
+            previewContainer = document.getElementById('mixtoPreview');
+            placeholderContainer = document.getElementById('mixtoUploadContent');
+        } else {
+            console.error('No se encontró input activo o archivos cargados');
+            return;
+        }
+        
+        // Crear nuevo FileList sin la imagen eliminada
+        const files = Array.from(input.files);
+        files.splice(imageIndex, 1);
+        
+        // Crear nuevo input con las imágenes restantes
+        const newInput = document.createElement('input');
+        newInput.type = 'file';
+        newInput.multiple = true;
+        newInput.accept = 'image/jpeg,image/jpg,image/png';
+        newInput.files = createFileList(files);
+        
+        // Reemplazar el input original
+        input.parentNode.replaceChild(newInput, input);
+        newInput.id = input.id;
+        newInput.name = 'yape_dashboard_proof[]';
+        newInput.onchange = function() { previewDashboardProof(this); };
+        
+        // Actualizar vistas previas
+        if (files.length > 0) {
+            previewDashboardProof(newInput);
+        } else {
+            // Si no hay más imágenes, mostrar placeholder
+            previewContainer.innerHTML = '';
+            placeholderContainer.classList.remove('hidden');
+        }
+    };
+
+    // Función auxiliar para crear FileList (similar a la de collection.blade.php)
+    window.createFileList = function(files) {
+        const dataTransfer = new DataTransfer();
+        files.forEach(file => dataTransfer.items.add(file));
+        return dataTransfer.files;
+    };
+
     function updatePaymentSelection(radio) {
         console.log('updatePaymentSelection llamado con:', radio.value);
 
@@ -1021,12 +1171,17 @@
                 // Verificar si se subió el comprobante
                 const yapeFileInput = document.getElementById('yapeDashboardFileInput');
                 if (yapeFileInput && yapeFileInput.files.length > 0) {
-                    console.log('Archivo yape encontrado:', yapeFileInput.files[0].name);
-                    // Para archivos, necesitamos usar FormData
+                    console.log('Archivos Yape encontrados:', yapeFileInput.files.length);
+                    // Para múltiples archivos, necesitamos usar FormData
                     const formData = new FormData();
                     formData.append('payment_method', paymentMethod);
                     formData.append('yape_amount', parseFloat(yapeAmount));
-                    formData.append('payment_proof', yapeFileInput.files[0]);
+                    
+                    // Agregar todos los archivos Yape
+                    for (let i = 0; i < yapeFileInput.files.length; i++) {
+                        formData.append('yape_dashboard_proof[]', yapeFileInput.files[i]);
+                        console.log(`Archivo Yape #${i + 1} agregado:`, yapeFileInput.files[i].name);
+                    }
 
                     console.log('FormData (yape):');
                     for (let [key, value] of formData.entries()) {
@@ -1070,7 +1225,7 @@
                         console.log('Response result (yape):', result);
 
                         if (result.success) {
-                            alert('Cierre de caja realizado correctamente');
+                            showSuccessToast();
                             window.location.reload();
                         } else {
                             console.error('Backend error (yape):', result);
@@ -1104,12 +1259,17 @@
                 // Verificar si se subió el comprobante para mixto
                 const mixtoFileInput = document.getElementById('mixtoFileInput');
                 if (mixtoFileInput && mixtoFileInput.files.length > 0) {
-                    // Usar FormData para el archivo
+                    // Usar FormData para múltiples archivos
                     const formData = new FormData();
                     formData.append('payment_method', paymentMethod);
                     formData.append('efectivo_amount', parseFloat(mixtoEfectivoAmount));
                     formData.append('yape_amount', parseFloat(mixtoYapeAmount));
-                    formData.append('payment_proof', mixtoFileInput.files[0]);
+                    
+                    // Agregar todos los archivos Yape
+                    for (let i = 0; i < mixtoFileInput.files.length; i++) {
+                        formData.append('yape_dashboard_proof[]', mixtoFileInput.files[i]);
+                        console.log(`Archivo mixto #${i + 1} agregado:`, mixtoFileInput.files[i].name);
+                    }
 
                     // Obtener CSRF token de forma segura
                     const getCsrfToken = () => {
@@ -1146,7 +1306,7 @@
                         const result = await response.json();
 
                         if (result.success) {
-                            alert('Cierre de caja realizado correctamente');
+                            showSuccessToast();
                             window.location.reload();
                         } else {
                             alert('Error al realizar el cierre de caja: ' + (result.message || 'Error desconocido'));
@@ -1213,7 +1373,7 @@
             console.log('Response result:', result);
 
             if (result.success) {
-                alert('Cierre de caja realizado correctamente');
+                showSuccessToast();
                 // Recargar la página para mostrar el estado actualizado
                 window.location.reload();
             } else {
@@ -1403,12 +1563,12 @@
                                                 <div class="flex items-center gap-2">
                                                     <i data-lucide="trending-up" class="w-4 h-4 text-gray-400"></i>
                                                     <span class="text-gray-500">Saldo pendiente:</span>
-                                                    <span class="font-semibold text-orange-600">${numberFormat(loan.amount - (loan.paid_amount || 0))}</span>
+                                                    <span class="font-semibold text-orange-600">${numberFormat((loan.installments ? (loan.installments.length - loan.installments.filter(i => i.status === 'paid').length) : loan.term_months) * loan.monthly_payment)}</span>
                                                 </div>
                                                 <div class="flex items-center gap-2">
                                                     <i data-lucide="calendar" class="w-4 h-4 text-gray-400"></i>
                                                     <span class="text-gray-500">Plazo:</span>
-                                                    <span class="font-semibold">${loan.term_months} meses</span>
+                                                    <span class="font-semibold">${loan.term_months} ${loan.tipo_credito === 'credito_diario' ? 'días' : loan.tipo_credito === 'credito_semanal' ? 'semanas' : 'meses'}</span>
                                                 </div>
                                                 <div class="flex items-center gap-2">
                                                     <i data-lucide="check-circle" class="w-4 h-4 text-gray-400"></i>
@@ -1761,7 +1921,7 @@
                 const result = await response.json();
 
                 if (result.success) {
-                    alert('Cierre de caja realizado correctamente');
+                    showSuccessToast();
 
                     // Actualizar el estado del botón de cierre de caja
                     document.getElementById('cashClosingButtonContainer').classList.add('hidden');

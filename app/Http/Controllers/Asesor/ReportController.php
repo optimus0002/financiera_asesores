@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use App\Services\S3Service;
+use App\Models\ImagenComprobante;
 
 class ReportController extends Controller
 {
@@ -262,14 +263,28 @@ class ReportController extends Controller
                         ], 400);
                     }
 
-                    // Manejar el archivo de comprobante
-                    if ($request->hasFile('payment_proof')) {
-                        $file = $request->file('payment_proof');
-                        $transferProof = S3Service::uploadImage($file, 'yape-comprobantes-cierre-caja');
+                    // Validar comprobantes Yape (múltiples imágenes)
+                    if ($request->payment_method === 'yape') {
+                        $request->validate([
+                            'yape_dashboard_proof' => 'required|array|min:1',
+                            'yape_dashboard_proof.*' => 'required|image|mimes:jpeg,jpg,png|max:5120'
+                        ]);
+                    }
+
+                    // Manejar múltiples archivos de comprobantes
+                    $transferProof = null; // Mantener null ya que se guardan en imagenes_comprobantes
+                    if ($request->hasFile('yape_dashboard_proof')) {
+                        $proofFiles = $request->file('yape_dashboard_proof');
+                        
+                        foreach ($proofFiles as $index => $file) {
+                            $proofUrl = S3Service::uploadImage($file, 'yape-comprobantes-cierre-caja');
+                            
+                            Log::info('Comprobante Yape #' . ($index + 1) . ' subido: ' . $proofUrl);
+                        }
                     } else {
                         return response()->json([
                             'success' => false,
-                            'message' => 'El comprobante de pago Yape es requerido'
+                            'message' => 'Los comprobantes de pago Yape son requeridos'
                         ], 400);
                     }
                     break;
@@ -285,14 +300,28 @@ class ReportController extends Controller
                         ], 400);
                     }
 
-                    // Manejar el archivo de comprobante
-                    if ($request->hasFile('payment_proof')) {
-                        $file = $request->file('payment_proof');
-                        $transferProof = S3Service::uploadImage($file, 'yape-comprobantes-cierre-caja');
+                    // Validar comprobantes Yape (múltiples imágenes)
+                    if ($request->payment_method === 'mixto') {
+                        $request->validate([
+                            'yape_dashboard_proof' => 'required|array|min:1',
+                            'yape_dashboard_proof.*' => 'required|image|mimes:jpeg,jpg,png|max:5120'
+                        ]);
+                    }
+
+                    // Manejar múltiples archivos de comprobantes
+                    $transferProof = null; // Mantener null ya que se guardan en imagenes_comprobantes
+                    if ($request->hasFile('yape_dashboard_proof')) {
+                        $proofFiles = $request->file('yape_dashboard_proof');
+                        
+                        foreach ($proofFiles as $index => $file) {
+                            $proofUrl = S3Service::uploadImage($file, 'yape-comprobantes-cierre-caja');
+                            
+                            Log::info('Comprobante Yape mixto #' . ($index + 1) . ' subido: ' . $proofUrl);
+                        }
                     } else {
                         return response()->json([
                             'success' => false,
-                            'message' => 'El comprobante de pago Yape es requerido'
+                            'message' => 'Los comprobantes de pago Yape son requeridos'
                         ], 400);
                     }
                     break;
@@ -308,7 +337,7 @@ class ReportController extends Controller
             $totalAmount = $cashAmount + $yapeAmount;
 
             // Crear registro de cierre de caja con los campos correctos
-            \App\Models\DailyCashClosing::create([
+            $cashClosing = \App\Models\DailyCashClosing::create([
                 'advisor_id' => $user->id,
                 'closing_date' => $today,
                 'total_amount' => $totalAmount,
@@ -320,6 +349,24 @@ class ReportController extends Controller
                 'status' => 'pending_review',
                 'payment_type' => $paymentType
             ]);
+
+            // Guardar comprobantes en imagenes_comprobantes si hay archivos Yape
+            if (($paymentMethod === 'yape' || $paymentMethod === 'mixto') && $request->hasFile('yape_dashboard_proof')) {
+                $proofFiles = $request->file('yape_dashboard_proof');
+                
+                foreach ($proofFiles as $file) {
+                    $proofUrl = S3Service::uploadImage($file, 'yape-comprobantes-cierre-caja');
+                    
+                    ImagenComprobante::create([
+                        'id_cuenta' => $cashClosing->id,
+                        'tipo_cuenta' => 'cierre_caja',
+                        'imagen' => $proofUrl,
+                        'fecha' => now(),
+                    ]);
+                    
+                    Log::info('Comprobante de cierre de caja guardado en imagenes_comprobantes: ' . $proofUrl);
+                }
+            }
 
             return response()->json([
                 'success' => true,

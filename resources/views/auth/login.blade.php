@@ -24,18 +24,7 @@
             <form method="POST" action="{{ route('login') }}" class="space-y-6" id="loginForm">
                 @csrf
                 
-                <!-- Mensaje de restricción horaria -->
-                <div id="timeRestriction" class="hidden mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <div class="flex items-center">
-                        <i data-lucide="clock" class="w-5 h-5 text-yellow-600 mr-3"></i>
-                        <div>
-                            <p class="text-yellow-800 font-medium">Horario de Acceso Restringido</p>
-                            <p class="text-yellow-700 text-sm mt-1">El sistema está disponible de <strong>Lunes a Sábado, 8:15 AM a 6:00 PM</strong></p>
-                            <p class="text-yellow-600 text-sm mt-1">Por favor, intente nuevamente después de las 8:15 AM.</p>
-                        </div>
-                    </div>
-                </div>
-                
+                                
                 <div>
                     <label for="dni" class="block text-sm font-medium text-gray-700 mb-2">
                         DNI
@@ -84,35 +73,6 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         lucide.createIcons();
-        
-        // Validar horario de acceso
-        const loginForm = document.getElementById('loginForm');
-        const timeRestrictionDiv = document.getElementById('timeRestriction');
-        
-        if (loginForm && timeRestrictionDiv) {
-            loginForm.addEventListener('submit', function(e) {
-                const now = new Date();
-                const currentHour = now.getHours();
-                const currentDay = now.getDay(); // 0 = Domingo, 6 = Sábado
-                
-                // Verificar si es fin de semana (Domingo = 0, Sábado = 6)
-                const isWeekend = currentDay === 0 || currentDay === 6;
-                
-                // Verificar si está antes de las 8:15 AM
-                const isBefore815 = currentHour < 8 || (currentHour === 8 && now.getMinutes() < 15);
-                
-                // Mostrar mensaje si es fin de semana o antes de las 8:15 AM
-                if (isWeekend || isBefore815) {
-                    e.preventDefault();
-                    timeRestrictionDiv.classList.remove('hidden');
-                    
-                    // Ocultar mensaje después de 5 segundos
-                    setTimeout(() => {
-                        timeRestrictionDiv.classList.add('hidden');
-                    }, 5000);
-                }
-            });
-        }
     });
 </script>
 @endpush

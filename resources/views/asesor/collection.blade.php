@@ -3,6 +3,20 @@
 @section('title', 'Cobros - Asesor')
 
 @section('content')
+<!-- Toast Flotante -->
+<div id="successToast" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg transform translate-y-full opacity-0 transition-all duration-500 ease-out z-50 flex items-center gap-3">
+    <div class="flex-shrink-0">
+        <i data-lucide="check-circle" class="w-6 h-6"></i>
+    </div>
+    <div class="flex-1">
+        <p class="font-semibold text-white">Pago procesado exitosamente</p>
+        <p class="text-green-100 text-sm">La operación se completó con éxito</p>
+    </div>
+    <button onclick="hideToast()" class="flex-shrink-0 text-white hover:text-green-100 transition-colors">
+        <i data-lucide="x" class="w-5 h-5"></i>
+    </button>
+</div>
+
 <br>
 <div class="min-h-screen">
 
@@ -28,10 +42,17 @@
                             <label class="block text-sm font-medium mb-2">Tipo de Registro</label>
                             <div class="space-y-3">
                                 @if($client->loans && $client->loans->count() > 0)
-                                    <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition-colors">
-                                        <input type="checkbox" name="payment_type[]" value="loan" class="h-4 w-4" checked>
-                                        <span class="font-medium">Pago de Préstamo</span>
-                                    </label>
+                                    @if($hasPendingInstallments)
+                                        <label class="flex items-center space-x-3 p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition-colors">
+                                            <input type="checkbox" name="payment_type[]" value="loan" class="h-4 w-4" checked>
+                                            <span class="font-medium">Pago de Préstamo</span>
+                                        </label>
+                                    @else
+                                        <label class="flex items-center space-x-3 p-3 border rounded-lg opacity-50 cursor-not-allowed">
+                                            <input type="checkbox" name="payment_type[]" value="loan" class="h-4 w-4" disabled>
+                                            <span class="font-medium text-gray-400">Pago de Préstamo (No hay cuotas pendientes hasta hoy)</span>
+                                        </label>
+                                    @endif
                                 @else
                                     <label class="flex items-center space-x-3 p-3 border rounded-lg opacity-50 cursor-not-allowed">
                                         <input type="checkbox" name="payment_type[]" value="loan" class="h-4 w-4" disabled>
@@ -215,26 +236,24 @@
                                 <div id="savings-yape-proof-section" class="mt-4 hidden">
                                     <div class="border-2 border-dashed border-green-300 rounded-lg p-6 bg-green-50">
                                         <div class="text-center">
-                                            <div id="savings-preview-container" class="mb-4 hidden">
-                                                <img id="savings-image-preview" src="" alt="Vista previa del comprobante" class="mx-auto max-h-64 rounded-lg shadow-md">
-                                                <button type="button" id="savings-remove-image" class="mt-2 px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors">
-                                                    <i data-lucide="trash-2" class="w-4 h-4 inline mr-1"></i>
-                                                    Quitar imagen
-                                                </button>
-                                            </div>
-                                            
-                                            <div id="savings-upload-area" class="border-2 border-dashed border-green-400 rounded-lg p-8 cursor-pointer hover:bg-green-100 transition-colors">
+                                            <div id="savings-upload-area" class="border-2 border-dashed border-green-400 rounded-lg p-8 cursor-pointer hover:bg-green-100 transition-colors" onclick="document.getElementById('savings_payment_proof').click()">
                                                 <i data-lucide="upload-cloud" class="w-12 h-12 text-green-500 mx-auto mb-4"></i>
-                                                <p class="text-green-700 font-medium">Arrastra el comprobante Yape aquí</p>
-                                                <p class="text-green-600 text-sm mt-2">o haz clic para seleccionar</p>
+                                                <p class="text-green-700 font-medium">Comprobantes Yape</p>
+                                                <p class="text-green-600 text-sm mt-2">Haz clic para seleccionar múltiples imágenes</p>
                                                 <p class="text-green-500 text-xs mt-1">Formatos: JPG, PNG (máx. 5MB)</p>
                                             </div>
                                             
                                             <input type="file" 
-                                                   name="savings_payment_proof" 
+                                                   name="savings_payment_proof[]" 
                                                    id="savings_payment_proof" 
                                                    accept="image/jpeg,image/jpg,image/png" 
-                                                   class="hidden">
+                                                   multiple
+                                                   class="hidden"
+                                                   onchange="previewSavingsProof(this)">
+                                               
+                                            <div id="savings-preview-container" class="mt-4 grid grid-cols-2 gap-2">
+                                                <!-- Las vistas previas se agregarán aquí dinámicamente -->
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -275,6 +294,137 @@
 @endsection
 @push('scripts')
 <script>
+// Función para verificar si hay cuotas pendientes y actualizar el checkbox
+    window.checkAndUpdateLoanCheckbox = function() {
+        // Obtener el client_id desde el formulario
+        const clientId = document.querySelector('input[name="client_id"]').value;
+        
+        if (!clientId) {
+            console.error('No se encontró el client_id');
+            return;
+        }
+        
+        console.log('🔍 Verificando cuotas pendientes para cliente:', clientId);
+        
+        // Hacer petición AJAX para obtener las cuotas actualizadas
+        fetch(`{{ route('asesor.collection') }}?clientId=${clientId}`, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.installments) {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0); // Inicio del día
+                
+                let hasPendingInstallments = false;
+                let pendingCount = 0;
+                
+                // Verificar cuotas pendientes hasta hoy
+                data.installments.forEach(installment => {
+                    if (installment.status === 'pending') {
+                        const dueDate = new Date(installment.due_date);
+                        dueDate.setHours(0, 0, 0, 0);
+                        
+                        if (dueDate <= today) {
+                            hasPendingInstallments = true;
+                            pendingCount++;
+                        }
+                    }
+                });
+                
+                console.log('📊 Resultado verificación:');
+                console.log('- Cuotas pendientes hasta hoy:', pendingCount);
+                console.log('- ¿Hay cuotas pendientes?:', hasPendingInstallments);
+                
+                // Actualizar el checkbox de Pago de Préstamo
+                updateLoanCheckbox(hasPendingInstallments);
+            }
+        })
+        .catch(error => {
+            console.error('Error al verificar cuotas pendientes:', error);
+        });
+    };
+    
+    // Función para actualizar el estado del checkbox de préstamo
+    window.updateLoanCheckbox = function(hasPendingInstallments) {
+        const loanCheckbox = document.querySelector('input[name="payment_type[]"][value="loan"]');
+        const loanLabel = loanCheckbox ? loanCheckbox.closest('label') : null;
+        
+        if (!loanCheckbox || !loanLabel) {
+            console.error('No se encontró el checkbox de préstamo');
+            return;
+        }
+        
+        if (hasPendingInstallments) {
+            // Habilitar checkbox
+            loanCheckbox.disabled = false;
+            loanCheckbox.checked = true;
+            loanLabel.classList.remove('opacity-50', 'cursor-not-allowed');
+            loanLabel.classList.add('hover:bg-blue-50', 'cursor-pointer', 'transition-colors');
+            
+            // Actualizar texto
+            const span = loanLabel.querySelector('span');
+            if (span) {
+                span.className = 'font-medium';
+                span.textContent = 'Pago de Préstamo';
+            }
+            
+            console.log('✅ Checkbox de préstamo HABILITADO');
+        } else {
+            // Bloquear checkbox
+            loanCheckbox.disabled = true;
+            loanCheckbox.checked = false;
+            loanLabel.classList.add('opacity-50', 'cursor-not-allowed');
+            loanLabel.classList.remove('hover:bg-blue-50', 'cursor-pointer', 'transition-colors');
+            
+            // Actualizar texto
+            const span = loanLabel.querySelector('span');
+            if (span) {
+                span.className = 'font-medium text-gray-400';
+                span.textContent = 'Pago de Préstamo (No hay cuotas pendientes hasta hoy)';
+            }
+            
+            console.log('🚫 Checkbox de préstamo BLOQUEADO');
+        }
+    };
+
+// Funciones para el toast flotante
+window.showSuccessToast = function() {
+    const toast = document.getElementById('successToast');
+    
+    // Primero asegurarse de que esté completamente oculto
+    toast.classList.remove('translate-y-0', 'opacity-100');
+    toast.classList.add('translate-y-full', 'opacity-0');
+    
+    // Forzar reflow para reiniciar la animación
+    void toast.offsetWidth;
+    
+    // Mostrar el toast con animación desde abajo
+    setTimeout(() => {
+        toast.classList.remove('translate-y-full', 'opacity-0');
+        toast.classList.add('translate-y-0', 'opacity-100');
+    }, 100);
+    
+    // Re-inicializar iconos Lucide para el toast
+    lucide.createIcons();
+    
+    // Ocultar automáticamente después de 4 segundos
+    setTimeout(() => {
+        hideToast();
+    }, 4000);
+};
+
+window.hideToast = function() {
+    const toast = document.getElementById('successToast');
+    
+    // Ocultar con animación hacia abajo
+    toast.classList.remove('translate-y-0', 'opacity-100');
+    toast.classList.add('translate-y-full', 'opacity-0');
+};
 
 // Funciones globales para manejar cuotas individuales
 document.addEventListener('change', function(e) {
@@ -320,55 +470,175 @@ window.toggleInstallmentPayment = function(installmentId, isChecked) {
 };
 
 window.previewInstallmentProof = function(installmentId, input) {
-    const file = input.files[0];
-    if (!file) return;
+    const files = input.files;
+    if (!files || files.length === 0) return;
 
-    // Validar tipo de archivo
-    if (!file.type.match('image.*')) {
-        alert('Por favor selecciona un archivo de imagen (JPG o PNG)');
-        return;
+    const previewContainer = document.getElementById(`installment-preview-${installmentId}`);
+    previewContainer.innerHTML = ''; // Limpiar vistas previas anteriores
+
+    Array.from(files).forEach((file, index) => {
+        // Validar tipo de archivo
+        if (!file.type.match('image.*')) {
+            alert(`El archivo "${file.name}" no es una imagen válida (JPG o PNG)`);
+            return;
+        }
+
+        // Validar tamaño (5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert(`El archivo "${file.name}" no debe ser mayor a 5MB`);
+            return;
+        }
+
+        // Mostrar vista previa
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const previewDiv = document.createElement('div');
+            previewDiv.className = 'relative group';
+            previewDiv.innerHTML = `
+                <img src="${e.target.result}" alt="Vista previa ${index + 1}" class="w-full h-24 object-cover rounded-lg shadow-md">
+                <button type="button" 
+                        onclick="removeSpecificImage(${installmentId}, ${index})" 
+                        class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i data-lucide="x" class="w-3 h-3"></i>
+                </button>
+            `;
+            previewContainer.appendChild(previewDiv);
+            
+            // Re-inicializar iconos Lucide para el nuevo botón
+            lucide.createIcons();
+        };
+        reader.readAsDataURL(file);
+    });
+
+    // Ocultar el área de subida si hay imágenes
+    const uploadArea = document.getElementById(`yape-proof-${installmentId}`).querySelector('.border-dashed');
+    if (uploadArea && files.length > 0) {
+        uploadArea.classList.add('hidden');
     }
+};
 
-    // Validar tamaño (5MB)
-    if (file.size > 5 * 1024 * 1024) {
-        alert('El archivo no debe ser mayor a 5MB');
-        return;
+window.previewSavingsProof = function(input) {
+    const files = input.files;
+    if (!files || files.length === 0) return;
+
+    const previewContainer = document.getElementById('savings-preview-container');
+    previewContainer.innerHTML = ''; // Limpiar vistas previas anteriores
+
+    Array.from(files).forEach((file, index) => {
+        // Validar tipo de archivo
+        if (!file.type.match('image.*')) {
+            alert(`El archivo "${file.name}" no es una imagen válida (JPG o PNG)`);
+            return;
+        }
+
+        // Validar tamaño (5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert(`El archivo "${file.name}" no debe ser mayor a 5MB`);
+            return;
+        }
+
+        // Mostrar vista previa
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const previewDiv = document.createElement('div');
+            previewDiv.className = 'relative group';
+            previewDiv.innerHTML = `
+                <img src="${e.target.result}" alt="Vista previa ${index + 1}" class="w-full h-24 object-cover rounded-lg shadow-md">
+                <button type="button" 
+                        onclick="removeSavingsImage(${index})" 
+                        class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i data-lucide="x" class="w-3 h-3"></i>
+                </button>
+            `;
+            previewContainer.appendChild(previewDiv);
+            
+            // Re-inicializar iconos Lucide para el nuevo botón
+            lucide.createIcons();
+        };
+        reader.readAsDataURL(file);
+    });
+
+    // Ocultar el área de subida si hay imágenes
+    const uploadArea = document.getElementById('savings-upload-area');
+    if (uploadArea && files.length > 0) {
+        uploadArea.classList.add('hidden');
     }
+};
 
-    // Mostrar vista previa
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const previewContainer = document.getElementById(`installment-preview-${installmentId}`);
-        const img = previewContainer.querySelector('img');
-        img.src = e.target.result;
-        previewContainer.classList.remove('hidden');
-        
-        // Ocultar el área de subida
+window.removeSavingsImage = function(imageIndex) {
+    const input = document.getElementById('savings_payment_proof');
+    const previewContainer = document.getElementById('savings-preview-container');
+    
+    // Crear nuevo FileList sin la imagen eliminada
+    const files = Array.from(input.files);
+    files.splice(imageIndex, 1);
+    
+    // Crear nuevo input con las imágenes restantes
+    const newInput = document.createElement('input');
+    newInput.type = 'file';
+    newInput.multiple = true;
+    newInput.accept = 'image/jpeg,image/jpg,image/png';
+    newInput.files = createFileList(files);
+    
+    // Reemplazar el input original
+    input.parentNode.replaceChild(newInput, input);
+    newInput.id = 'savings_payment_proof';
+    newInput.name = 'savings_payment_proof[]';
+    newInput.onchange = function() { previewSavingsProof(this); };
+    
+    // Actualizar vistas previas
+    if (files.length > 0) {
+        previewSavingsProof(newInput);
+    } else {
+        // Si no hay más imágenes, mostrar área de subida
+        previewContainer.innerHTML = '';
+        const uploadArea = document.getElementById('savings-upload-area');
+        if (uploadArea) {
+            uploadArea.classList.remove('hidden');
+        }
+    }
+};
+
+window.removeSpecificImage = function(installmentId, imageIndex) {
+    const input = document.getElementById(`installment_proof_${installmentId}`);
+    const previewContainer = document.getElementById(`installment-preview-${installmentId}`);
+    
+    // Crear nuevo FileList sin la imagen eliminada
+    const files = Array.from(input.files);
+    files.splice(imageIndex, 1);
+    
+    // Crear nuevo input con las imágenes restantes
+    const newInput = document.createElement('input');
+    newInput.type = 'file';
+    newInput.multiple = true;
+    newInput.accept = 'image/jpeg,image/jpg,image/png';
+    newInput.files = createFileList(files);
+    
+    // Reemplazar el input original
+    input.parentNode.replaceChild(newInput, input);
+    newInput.id = `installment_proof_${installmentId}`;
+    newInput.name = `installment_proof_${installmentId}[]`;
+    newInput.onchange = function() { previewInstallmentProof(installmentId, this); };
+    
+    // Actualizar vistas previas
+    if (files.length > 0) {
+        previewInstallmentProof(installmentId, newInput);
+    } else {
+        // Si no hay más imágenes, mostrar área de subida
+        previewContainer.innerHTML = '';
         const uploadArea = document.getElementById(`yape-proof-${installmentId}`).querySelector('.border-dashed');
         if (uploadArea) {
-            uploadArea.classList.add('hidden');
+            uploadArea.classList.remove('hidden');
         }
-    };
-    reader.readAsDataURL(file);
-};
-
-window.removeInstallmentProof = function(installmentId) {
-    const previewContainer = document.getElementById(`installment-preview-${installmentId}`);
-    const input = document.getElementById(`installment_proof_${installmentId}`);
-    const yapeProof = document.getElementById(`yape-proof-${installmentId}`);
-    
-    // Limpiar input
-    input.value = '';
-    
-    // Ocultar vista previa
-    previewContainer.classList.add('hidden');
-    
-    // Mostrar área de subida
-    const uploadArea = yapeProof.querySelector('.border-dashed');
-    if (uploadArea) {
-        uploadArea.classList.remove('hidden');
     }
 };
+
+// Función auxiliar para crear FileList
+function createFileList(files) {
+    const dataTransfer = new DataTransfer();
+    files.forEach(file => dataTransfer.items.add(file));
+    return dataTransfer.files;
+}
 
 // Función para mostrar modal de confirmación
 function showConfirmModal(message, onConfirm) {
@@ -511,11 +781,16 @@ Esta acción no se puede deshacer.`;
             client_id: '{{ $client->id }}'
         });
         
-        // Agregar comprobante si es Yape
+        // Agregar comprobantes si es Yape (múltiples imágenes)
         if (paymentMethod === 'yape') {
             const proofInput = document.getElementById(`installment_proof_${installmentId}`);
-            formData.append('payment_proof', proofInput.files[0]);
-            console.log('📎 Comprobante Yape agregado:', proofInput.files[0].name);
+            console.log('📎 Comprobantes Yape encontrados:', proofInput.files.length);
+            
+            // Agregar todos los archivos seleccionados
+            for (let i = 0; i < proofInput.files.length; i++) {
+                formData.append('installment_proof[]', proofInput.files[i]);
+                console.log(`📎 Comprobante Yape #${i + 1} agregado:`, proofInput.files[i].name);
+            }
         }
         
         console.log('🚀 Enviando solicitud a:', '{{ route("asesor.collection.payment") }}');
@@ -559,7 +834,12 @@ Esta acción no se puede deshacer.`;
             console.log('📊 Datos recibidos:', data);
             
             if (data.success) {
-                alert('Pago procesado exitosamente');
+                showSuccessToast();
+                
+                // Verificar si hay cuotas pendientes y actualizar el checkbox
+                setTimeout(() => {
+                    checkAndUpdateLoanCheckbox();
+                }, 1000); // Esperar 1 segundo para que el backend actualice los datos
                 
                 // Actualizar la cuota pagada como "pagada" en el DOM
                 const paidCheckbox = document.querySelector(`input[data-installment-id="${installmentId}"]`);
@@ -783,22 +1063,20 @@ window.createPaymentOptionsForInstallment = function(installmentId, amount) {
             <div class="text-center">
                 <div class="border-2 border-dashed border-green-400 rounded-lg p-4 cursor-pointer hover:bg-green-100 transition-colors" onclick="document.getElementById('installment_proof_${installmentId}').click()">
                     <i data-lucide="upload-cloud" class="w-8 h-8 text-green-500 mx-auto mb-2"></i>
-                    <p class="text-green-700 text-sm font-medium">Comprobante Yape</p>
-                    <p class="text-green-600 text-xs">Haz clic para seleccionar</p>
+                    <p class="text-green-700 text-sm font-medium">Comprobantes Yape</p>
+                    <p class="text-green-600 text-xs">Haz clic para seleccionar múltiples imágenes</p>
                 </div>
                 
                 <input type="file" 
-                       name="installment_proof_${installmentId}" 
+                       name="installment_proof_${installmentId}[]" 
                        id="installment_proof_${installmentId}" 
                        accept="image/jpeg,image/jpg,image/png" 
+                       multiple
                        class="hidden"
                        onchange="previewInstallmentProof(${installmentId}, this)">
                        
-                <div id="installment-preview-${installmentId}" class="mt-2 hidden">
-                    <img src="" alt="Vista previa" class="mx-auto max-h-32 rounded-lg shadow-md">
-                    <button type="button" class="mt-1 px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600" onclick="removeInstallmentProof(${installmentId})">
-                        Quitar
-                    </button>
+                <div id="installment-preview-${installmentId}" class="mt-2 grid grid-cols-2 gap-2">
+                    <!-- Las vistas previas se agregarán aquí dinámicamente -->
                 </div>
             </div>
         </div>
@@ -997,6 +1275,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Estado inicial
     toggleSections();
 
+    // Código antiguo de vista previa obsoleto - ya no se usa
+    // Las funciones nuevas previewInstallmentProof y previewSavingsProof manejan esto
+    /*
     // Vista previa de imágenes para préstamos
     const paymentProofInput = document.getElementById('payment_proof');
     const uploadArea = document.getElementById('upload-area');
@@ -1086,6 +1367,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Configurar vista previa para ahorros
     setupImagePreview(savingsPaymentProofInput, savingsUploadArea, savingsPreviewContainer, savingsImagePreview, savingsRemoveImageBtn);
+    */
 
     // Show/hide Yape proof section based on payment method
     const paymentMethodRadios = document.querySelectorAll('input[name="payment_method"]');
@@ -1310,22 +1592,20 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <div class="text-center">
                                         <div class="border-2 border-dashed border-green-400 rounded-lg p-4 cursor-pointer hover:bg-green-100 transition-colors" onclick="document.getElementById('installment_proof_${installment.id}').click()">
                                             <i data-lucide="upload-cloud" class="w-8 h-8 text-green-500 mx-auto mb-2"></i>
-                                            <p class="text-green-700 text-sm font-medium">Comprobante Yape</p>
-                                            <p class="text-green-600 text-xs">Haz clic para seleccionar</p>
+                                            <p class="text-green-700 text-sm font-medium">Comprobantes Yape</p>
+                                            <p class="text-green-600 text-xs">Haz clic para seleccionar múltiples imágenes</p>
                                         </div>
                                         
                                         <input type="file" 
-                                               name="installment_proof_${installment.id}" 
+                                               name="installment_proof_${installment.id}[]" 
                                                id="installment_proof_${installment.id}" 
                                                accept="image/jpeg,image/jpg,image/png" 
+                                               multiple
                                                class="hidden"
                                                onchange="previewInstallmentProof(${installment.id}, this)">
                                                
-                                        <div id="installment-preview-${installment.id}" class="mt-2 hidden">
-                                            <img src="" alt="Vista previa" class="mx-auto max-h-32 rounded-lg shadow-md">
-                                            <button type="button" class="mt-1 px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600" onclick="removeInstallmentProof(${installment.id})">
-                                                Quitar
-                                            </button>
+                                        <div id="installment-preview-${installment.id}" class="mt-2 grid grid-cols-2 gap-2">
+                                            <!-- Las vistas previas se agregarán aquí dinámicamente -->
                                         </div>
                                     </div>
                                 </div>
@@ -1460,6 +1740,22 @@ Esta acción no se puede deshacer.`;
                     console.log('🚀 Usuario confirmó, enviando AJAX...');
                     // Crear FormData para el pago de ahorros
                     const formData = new FormData(form);
+                    
+                    // Verificar que los comprobantes Yape se incluyan correctamente
+                    const savingsProofInput = document.getElementById('savings_payment_proof');
+                    if (savingsPaymentMethod && savingsPaymentMethod.value === 'yape' && savingsProofInput) {
+                        console.log('📎 Verificando comprobantes Yape para ahorros:', {
+                            hasFiles: savingsProofInput.files.length > 0,
+                            fileCount: savingsProofInput.files.length,
+                            fileNames: Array.from(savingsProofInput.files).map(f => f.name)
+                        });
+                        
+                        // Asegurar que todos los archivos se incluyan en el FormData
+                        for (let i = 0; i < savingsProofInput.files.length; i++) {
+                            formData.append('savings_payment_proof[]', savingsProofInput.files[i]);
+                            console.log(`📎 Comprobante Yape ahorros #${i + 1} agregado:`, savingsProofInput.files[i].name);
+                        }
+                    }
                     
                     // Enviar con AJAX
                     fetch('{{ route("asesor.collection.payment") }}', {

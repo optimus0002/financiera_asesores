@@ -11,6 +11,7 @@ use App\Models\Loan;
 use App\Services\S3Service;
 use App\Models\Savings;
 use App\Models\Installment;
+use App\Models\ImagenComprobante;
 
 class CollectionController extends Controller
 {
@@ -62,6 +63,30 @@ class CollectionController extends Controller
 
         Log::info('Cliente encontrado: ' . $client->id);
 
+        // Verificar si hay cuotas pendientes hasta el día de hoy (inclusive)
+        $hasPendingInstallments = false;
+        $pendingInstallmentsCount = 0;
+        $today = now()->startOfDay(); // Asegurar que compare solo la fecha sin hora
+        
+        Log::info('Fecha de hoy (para comparación): ' . $today->format('Y-m-d H:i:s'));
+        
+        foreach ($client->loans as $loan) {
+            foreach ($loan->installments as $installment) {
+                $installmentDueDate = \Carbon\Carbon::parse($installment->due_date)->startOfDay();
+                
+                Log::info("Cuota ID: {$installment->id}, Due Date: {$installmentDueDate->format('Y-m-d')}, Status: {$installment->status}, Comparación: " . ($installmentDueDate->lte($today) ? 'Menor o igual' : 'Mayor'));
+                
+                if ($installment->status === 'pending' && $installmentDueDate->lte($today)) {
+                    $hasPendingInstallments = true;
+                    $pendingInstallmentsCount++;
+                    Log::info('Cuota pendiente encontrada - ID: ' . $installment->id . ', Due: ' . $installment->due_date . ', Total acumulado: ' . $pendingInstallmentsCount);
+                }
+            }
+        }
+
+        Log::info('Total de cuotas pendientes hasta hoy: ' . $pendingInstallmentsCount);
+        Log::info('¿Hay cuotas pendientes hasta hoy?: ' . ($hasPendingInstallments ? 'Sí' : 'No'));
+
         // Si es una solicitud AJAX, devolver JSON con datos de cuotas
         if ($request->ajax() || $request->wantsJson()) {
             $installmentsData = [];
@@ -89,7 +114,7 @@ class CollectionController extends Controller
             ]);
         }
 
-        return view('asesor.collection', compact('client'));
+        return view('asesor.collection', compact('client', 'hasPendingInstallments'));
     }
 
     public function processPayment(Request $request)
@@ -142,12 +167,24 @@ class CollectionController extends Controller
             $installment->payment_date = now();
             $installment->payment_method = $request->payment_method;
             
-            // Manejar el comprobante de pago si es Yape
-            if ($request->payment_method === 'yape' && $request->hasFile('payment_proof')) {
-                $paymentProof = $request->file('payment_proof');
-                $proofUrl = S3Service::uploadImage($paymentProof, 'yape-comprobantes');
-                $installment->payment_proof = $proofUrl;
-                Log::info('Comprobante Yape guardado en S3: ' . $proofUrl);
+            // Manejar los comprobantes de pago si es Yape (múltiples imágenes)
+            if ($request->payment_method === 'yape' && $request->hasFile('installment_proof')) {
+                $paymentProofs = $request->file('installment_proof');
+                
+                // Procesar cada imagen
+                foreach ($paymentProofs as $index => $paymentProof) {
+                    $proofUrl = S3Service::uploadImage($paymentProof, 'yape-comprobantes');
+                    
+                    // Guardar en la tabla imagenes_comprobantes
+                    ImagenComprobante::create([
+                        'id_cuenta' => $installment->id,
+                        'tipo_cuenta' => 'cuenta_credito',
+                        'imagen' => $proofUrl,
+                        'fecha' => now(),
+                    ]);
+                    
+                    Log::info('Comprobante Yape #' . ($index + 1) . ' guardado en S3: ' . $proofUrl);
+                }
             }
             
             $installment->save();
@@ -187,20 +224,31 @@ class CollectionController extends Controller
             // Validación adicional para Yape
             if ($request->payment_method === 'yape') {
                 Log::info('Validando comprobante Yape...');
-                Log::info('Archivo recibido:', ['has_file' => $request->hasFile('payment_proof') ? 'Sí' : 'No']);
-                if ($request->hasFile('payment_proof')) {
-                    $file = $request->file('payment_proof');
-                    Log::info('Info archivo:', [
-                        'original_name' => $file->getClientOriginalName(),
-                        'mime_type' => $file->getMimeType(),
-                        'size' => $file->getSize(),
-                        'extension' => $file->getClientOriginalExtension()
+                Log::info('Archivo recibido:', ['has_file' => $request->hasFile('installment_proof') ? 'Sí' : 'No']);
+                if ($request->hasFile('installment_proof')) {
+                    $files = $request->file('installment_proof');
+                    Log::info('Info archivos:', [
+                        'file_count' => is_array($files) ? count($files) : 1,
+                        'files' => is_array($files) ? array_map(function($file) {
+                            return [
+                                'original_name' => $file->getClientOriginalName(),
+                                'mime_type' => $file->getMimeType(),
+                                'size' => $file->getSize(),
+                                'extension' => $file->getClientOriginalExtension()
+                            ];
+                        }, $files) : [[
+                            'original_name' => $files->getClientOriginalName(),
+                            'mime_type' => $files->getMimeType(),
+                            'size' => $files->getSize(),
+                            'extension' => $files->getClientOriginalExtension()
+                        ]]
                     ]);
                 }
                 
                 try {
                     $request->validate([
-                        'payment_proof' => 'required|image|mimes:jpeg,jpg,png|max:5120'
+                        'installment_proof' => 'required|array|min:1',
+                        'installment_proof.*' => 'required|image|mimes:jpeg,jpg,png|max:5120'
                     ]);
                     Log::info('Validación Yape pasada');
                 } catch (\Illuminate\Validation\ValidationException $e) {
@@ -252,11 +300,24 @@ class CollectionController extends Controller
             $oldestPendingInstallment->payment_date = now();
             $oldestPendingInstallment->payment_method = $request->payment_method;
             
-            // Manejar el comprobante de pago si es Yape
+            // Manejar los comprobantes de pago si es Yape (múltiples imágenes)
             if ($request->payment_method === 'yape' && $request->hasFile('payment_proof')) {
-                $paymentProof = $request->file('payment_proof');
-                $proofUrl = S3Service::uploadImage($paymentProof, 'yape-comprobantes');
-                $oldestPendingInstallment->payment_proof = $proofUrl;
+                $paymentProofs = $request->file('payment_proof');
+                
+                // Procesar cada imagen
+                foreach ($paymentProofs as $index => $paymentProof) {
+                    $proofUrl = S3Service::uploadImage($paymentProof, 'yape-comprobantes');
+                    
+                    // Guardar en la tabla imagenes_comprobantes
+                    ImagenComprobante::create([
+                        'id_cuenta' => $oldestPendingInstallment->id,
+                        'tipo_cuenta' => 'cuenta_credito',
+                        'imagen' => $proofUrl,
+                        'fecha' => now(),
+                    ]);
+                    
+                    Log::info('Comprobante Yape #' . ($index + 1) . ' guardado en S3: ' . $proofUrl);
+                }
             }
             
             $oldestPendingInstallment->save();
@@ -282,7 +343,8 @@ class CollectionController extends Controller
                 Log::info('Validando comprobante Yape para ahorros...');
                 try {
                     $request->validate([
-                        'savings_payment_proof' => 'required|image|mimes:jpeg,jpg,png|max:5120'
+                        'savings_payment_proof' => 'required|array|min:1',
+                        'savings_payment_proof.*' => 'required|image|mimes:jpeg,jpg,png|max:5120'
                     ]);
                     Log::info('Validación Yape para ahorros pasada');
                 } catch (\Illuminate\Validation\ValidationException $e) {
@@ -334,12 +396,24 @@ class CollectionController extends Controller
             $oldestPendingSavingsInstallment->payment_date = now();
             $oldestPendingSavingsInstallment->payment_method = $request->savings_payment_method;
             
-            // Manejar el comprobante de pago si es Yape para ahorros
+            // Manejar los comprobantes de pago si es Yape para ahorros (múltiples imágenes)
             if ($request->savings_payment_method === 'yape' && $request->hasFile('savings_payment_proof')) {
-                $paymentProof = $request->file('savings_payment_proof');
-                $proofUrl = S3Service::uploadImage($paymentProof, 'yape-comprobantes-ahorros');
-                $oldestPendingSavingsInstallment->payment_proof = $proofUrl;
-                Log::info('Comprobante Yape para ahorros guardado en S3: ' . $proofUrl);
+                $paymentProofs = $request->file('savings_payment_proof');
+                
+                // Procesar cada imagen
+                foreach ($paymentProofs as $index => $paymentProof) {
+                    $proofUrl = S3Service::uploadImage($paymentProof, 'yape-comprobantes-ahorros');
+                    
+                    // Guardar en la tabla imagenes_comprobantes
+                    ImagenComprobante::create([
+                        'id_cuenta' => $oldestPendingSavingsInstallment->id,
+                        'tipo_cuenta' => 'cuenta_ahorro',
+                        'imagen' => $proofUrl,
+                        'fecha' => now(),
+                    ]);
+                    
+                    Log::info('Comprobante Yape para ahorros #' . ($index + 1) . ' guardado en S3: ' . $proofUrl);
+                }
             }
             
             $oldestPendingSavingsInstallment->save();

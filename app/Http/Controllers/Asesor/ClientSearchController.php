@@ -122,6 +122,7 @@ class ClientSearchController extends Controller
                             'end_date' => $loan->end_date->format('Y-m-d'),
                             'notes' => $loan->notes,
                             'codigo' => $loan->codigo,
+                            'tipo_credito' => $loan->tipo_credito,
                             'loan_status' => $loan->status ? [
                                 'id' => $loan->status->id,
                                 'code' => $loan->status->code,
@@ -237,6 +238,7 @@ class ClientSearchController extends Controller
                     'end_date' => $loan->end_date->format('Y-m-d'),
                     'notes' => $loan->notes,
                     'codigo' => $loan->codigo,
+                    'tipo_credito' => $loan->tipo_credito,
                     'loan_status' => $loan->status ? [
                         'id' => $loan->status->id,
                         'code' => $loan->status->code,
